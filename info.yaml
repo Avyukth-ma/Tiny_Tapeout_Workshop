@@ -1,52 +1,57 @@
 # Tiny Tapeout project information
+
 project:
   title: "TinyRV32"
-  author:       "Avyukth-ma"
-  discord:      ""
-  description: "A compact single-cycle RV32I processor."  language:     "Verilog"
-  clock_hz:     0
+  author: "Avyukth-ma"
+  discord: ""
+  description: "A compact single-cycle RV32I processor."
+  language: "Verilog"
+  clock_hz: 0
 
-  # How many tiles your design occupies? A single tile is about 167x108 uM.
+  # How many tiles your design occupies?
   tiles: "1x1"
 
   # Top module name
   top_module: "tt_um_avyukth_tinyrv32"
 
-  # List your project's source files here.
+  # List of source files
   source_files:
     - "project.v"
 
+
 # The pinout of your project.
 pinout:
+
   # Inputs
-  ui[0]: "A0"
-  ui[1]: "A1"
-  ui[2]: "A2"
-  ui[3]: "A3"
-  ui[4]: "B0"
-  ui[5]: "B1"
-  ui[6]: "B2"
-  ui[7]: "B3"
+  ui[0]: "Register Select Bit 0"
+  ui[1]: "Register Select Bit 1"
+  ui[2]: "Register Select Bit 2"
+  ui[3]: "Unused"
+  ui[4]: "Unused"
+  ui[5]: "Unused"
+  ui[6]: "Unused"
+  ui[7]: "Unused"
 
   # Outputs
-  uo[0]: "Y0"
-  uo[1]: "Y1"
-  uo[2]: "Y2"
-  uo[3]: "Y3"
-  uo[4]: "Carry"
-  uo[5]: "Zero"
-  uo[6]: "Unused"
-  uo[7]: "Unused"
+  uo[0]: "Register Data Bit 0"
+  uo[1]: "Register Data Bit 1"
+  uo[2]: "Register Data Bit 2"
+  uo[3]: "Register Data Bit 3"
+  uo[4]: "Register Data Bit 4"
+  uo[5]: "Register Data Bit 5"
+  uo[6]: "Register Data Bit 6"
+  uo[7]: "Register Data Bit 7"
 
   # Bidirectional pins
-  uio[0]: "OP0"
-  uio[1]: "OP1"
-  uio[2]: "OP2"
+  uio[0]: "Unused"
+  uio[1]: "Unused"
+  uio[2]: "Unused"
   uio[3]: "Unused"
   uio[4]: "Unused"
   uio[5]: "Unused"
   uio[6]: "Unused"
   uio[7]: "Unused"
+
 
 # Do not change!
 yaml_version: 6
