@@ -1,17 +1,16 @@
 # Tiny Tapeout project information
 project:
-  title:        "4-bit ALU"
+  title: "TinyRV32"
   author:       "Avyukth-ma"
   discord:      ""
-  description:  "A combinational 4-bit arithmetic and logic unit supporting eight operations."
-  language:     "Verilog"
+  description: "A compact single-cycle RV32I processor."  language:     "Verilog"
   clock_hz:     0
 
   # How many tiles your design occupies? A single tile is about 167x108 uM.
   tiles: "1x1"
 
   # Top module name
-  top_module:  "tt_um_avyukth_alu"
+  top_module: "tt_um_avyukth_tinyrv32"
 
   # List your project's source files here.
   source_files:
