@@ -1,116 +1,117 @@
 import cocotb
-from cocotb.triggers import Timer
-
-
-async def apply_inputs(dut, A, B, OP):
-    """Apply ALU inputs."""
-
-    # ui_in[3:0] = A
-    # ui_in[7:4] = B
-    dut.ui_in.value = (B << 4) | A
-
-    # uio_in[2:0] = OP
-    dut.uio_in.value = OP
-
-    # Allow combinational logic to settle
-    await Timer(1, units="ns")
-
-
-def expected_result(A, B, OP):
-    """Calculate expected ALU result and carry."""
-
-    if OP == 0:          # ADD
-        value = A + B
-        result = value & 0xF
-        carry = (value >> 4) & 1
-
-    elif OP == 1:        # SUB
-        value = (A - B) & 0x1F
-        result = value & 0xF
-        carry = (value >> 4) & 1
-
-    elif OP == 2:        # AND
-        result = A & B
-        carry = 0
-
-    elif OP == 3:        # OR
-        result = A | B
-        carry = 0
-
-    elif OP == 4:        # XOR
-        result = A ^ B
-        carry = 0
-
-    elif OP == 5:        # NOT A
-        result = (~A) & 0xF
-        carry = 0
-
-    elif OP == 6:        # INC A
-        value = A + 1
-        result = value & 0xF
-        carry = (value >> 4) & 1
-
-    elif OP == 7:        # DEC A
-        value = (A - 1) & 0x1F
-        result = value & 0xF
-        carry = (value >> 4) & 1
-
-    return result, carry
+from cocotb.clock import Clock
+from cocotb.triggers import RisingEdge, Timer
 
 
 @cocotb.test()
-async def test_alu(dut):
+async def test_tinyrv32(dut):
 
-    dut._log.info("Starting 4-bit ALU test")
+    dut._log.info("Starting TinyRV32 CPU test")
 
-    # Enable the design
+    # ------------------------------------------------------------
+    # Enable CPU
+    # ------------------------------------------------------------
+
     dut.ena.value = 1
 
-    # These are unused by our combinational ALU
-    dut.clk.value = 0
+    # ------------------------------------------------------------
+    # Start clock
+    # ------------------------------------------------------------
+
+    clock = Clock(dut.clk, 10, units="ns")
+    cocotb.start_soon(clock.start())
+
+    # ------------------------------------------------------------
+    # Reset CPU
+    # ------------------------------------------------------------
+
+    dut.rst_n.value = 0
+
+    dut.ui_in.value = 0
+    dut.uio_in.value = 0
+
+    await Timer(20, units="ns")
+
     dut.rst_n.value = 1
 
-    # Test all 8 operations
-    for OP in range(8):
+    # ------------------------------------------------------------
+    # Execute instructions
+    #
+    # Program:
+    #
+    # 0: NOP
+    # 1: ADDI x1, x0, 5
+    # 2: ADDI x2, x0, 10
+    # 3: ADD  x3, x1, x2
+    # 4: SUB  x4, x2, x1
+    # 5: AND  x5, x1, x2
+    # 6: OR   x6, x1, x2
+    # 7: XOR  x7, x1, x2
+    #
+    # ------------------------------------------------------------
 
-        # Test all possible 4-bit A values
-        for A in range(16):
+    # NOP
+    await RisingEdge(dut.clk)
 
-            # Test all possible 4-bit B values
-            for B in range(16):
+    # ADDI x1, x0, 5
+    await RisingEdge(dut.clk)
 
-                await apply_inputs(dut, A, B, OP)
+    assert int(dut.user_project.registers[1].value) == 5, \
+        "ADDI x1 failed"
 
-                expected, expected_carry = expected_result(A, B, OP)
+    # ADDI x2, x0, 10
+    await RisingEdge(dut.clk)
 
-                # Read ALU result
-                actual = int(dut.uo_out.value)
+    assert int(dut.user_project.registers[2].value) == 10, \
+        "ADDI x2 failed"
 
-                actual_result = actual & 0xF
-                actual_carry = (actual >> 4) & 1
-                actual_zero = (actual >> 5) & 1
+    # ADD x3, x1, x2
+    await RisingEdge(dut.clk)
 
-                # Check result
-                assert actual_result == expected, (
-                    f"OP={OP:03b}, A={A:04b}, B={B:04b}: "
-                    f"Expected result={expected:04b}, "
-                    f"Got result={actual_result:04b}"
-                )
+    assert int(dut.user_project.registers[3].value) == 15, \
+        "ADD failed"
 
-                # Check carry
-                assert actual_carry == expected_carry, (
-                    f"OP={OP:03b}, A={A:04b}, B={B:04b}: "
-                    f"Expected carry={expected_carry}, "
-                    f"Got carry={actual_carry}"
-                )
+    # SUB x4, x2, x1
+    await RisingEdge(dut.clk)
 
-                # Check zero flag
-                expected_zero = 1 if expected == 0 else 0
+    assert int(dut.user_project.registers[4].value) == 5, \
+        "SUB failed"
 
-                assert actual_zero == expected_zero, (
-                    f"OP={OP:03b}, A={A:04b}, B={B:04b}: "
-                    f"Expected zero={expected_zero}, "
-                    f"Got zero={actual_zero}"
-                )
+    # AND x5, x1, x2
+    await RisingEdge(dut.clk)
 
-    dut._log.info("All 2048 ALU test cases passed!")
+    assert int(dut.user_project.registers[5].value) == (5 & 10), \
+        "AND failed"
+
+    # OR x6, x1, x2
+    await RisingEdge(dut.clk)
+
+    assert int(dut.user_project.registers[6].value) == (5 | 10), \
+        "OR failed"
+
+    # XOR x7, x1, x2
+    await RisingEdge(dut.clk)
+
+    assert int(dut.user_project.registers[7].value) == (5 ^ 10), \
+        "XOR failed"
+
+    # ------------------------------------------------------------
+    # Check x0
+    #
+    # RISC-V requires x0 to always contain zero.
+    # ------------------------------------------------------------
+
+    assert int(dut.user_project.registers[0].value) == 0, \
+        "x0 is not zero"
+
+    # ------------------------------------------------------------
+    # Check debug output
+    #
+    # uo_out displays x3[7:0].
+    # x3 = 15.
+    # ------------------------------------------------------------
+
+    assert int(dut.uo_out.value) == 15, \
+        "Debug output does not match x3"
+
+    dut._log.info("TinyRV32 basic instruction test passed!")
