@@ -17,6 +17,12 @@ module tb ();
   wire [7:0] uio_out;
   wire [7:0] uio_oe;
 
+`ifdef GL_TEST
+  // Power supplies for gate-level simulation
+  wire VPWR = 1'b1;
+  wire VGND = 1'b0;
+`endif
+
   // Waveform dump
   initial begin
     $dumpfile("tb.fst");
@@ -26,6 +32,12 @@ module tb ();
 
   // Instantiate 4-bit ALU
   tt_um_avyukth_alu user_project (
+
+`ifdef GL_TEST
+      // Power ports for gate-level simulation
+      .VPWR(VPWR),
+      .VGND(VGND),
+`endif
 
       .ui_in  (ui_in),
       .uo_out (uo_out),
