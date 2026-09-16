@@ -272,19 +272,42 @@ module tt_um_avyukth_tinyrv32 (
     // ============================================================
     // DEBUG OUTPUT
     //
-    // uo_out[7:0] shows the low byte of x3.
+    // ui_in[2:0] selects which register is displayed:
     //
-    // With the program above:
+    // 001 -> x1
+    // 010 -> x2
+    // 011 -> x3
+    // 100 -> x4
+    // 101 -> x5
+    // 110 -> x6
+    // 111 -> x7
     //
-    // x1 = 5
-    // x2 = 10
-    // x3 = 15
+    // ui_in[2:0] = 000 displays x0.
     //
-    // Therefore uo_out eventually becomes 00001111.
+    // Only the low 8 bits are exposed.
     // ============================================================
-
-    assign uo_out = registers[3][7:0];
-
+    
+    reg [31:0] debug_register;
+    
+    always @(*) begin
+    
+        case (ui_in[2:0])
+    
+            3'b000: debug_register = registers[0];
+            3'b001: debug_register = registers[1];
+            3'b010: debug_register = registers[2];
+            3'b011: debug_register = registers[3];
+            3'b100: debug_register = registers[4];
+            3'b101: debug_register = registers[5];
+            3'b110: debug_register = registers[6];
+            3'b111: debug_register = registers[7];
+    
+            default: debug_register = 32'd0;
+    
+        endcase
+    end
+    
+    assign uo_out = debug_register[7:0];
     // Bidirectional pins unused
     assign uio_out = 8'b00000000;
     assign uio_oe  = 8'b00000000;
