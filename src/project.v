@@ -19,17 +19,14 @@ module tt_um_avyukth_tinyrv32 (
 
     // ============================================================
     // REGISTER FILE
-    // 32 registers, each 32 bits wide
-    // x0 is always zero
+    // 32 registers x 32 bits
+    // x0 is permanently zero
     // ============================================================
 
     reg [31:0] registers [0:31];
 
     // ============================================================
     // INSTRUCTION MEMORY
-    // Small internal ROM
-    //
-    // Each location contains one 32-bit RISC-V instruction.
     // ============================================================
 
     reg [31:0] instruction_memory [0:15];
@@ -68,7 +65,7 @@ module tt_um_avyukth_tinyrv32 (
     end
 
     // ============================================================
-    // FETCH
+    // INSTRUCTION FETCH
     // ============================================================
 
     wire [31:0] instruction;
@@ -105,8 +102,7 @@ module tt_um_avyukth_tinyrv32 (
 
     // ============================================================
     // IMMEDIATE GENERATOR
-    //
-    // Used for ADDI.
+    // I-TYPE IMMEDIATE
     // ============================================================
 
     wire [31:0] immediate;
@@ -118,15 +114,20 @@ module tt_um_avyukth_tinyrv32 (
     // CONTROL SIGNALS
     // ============================================================
 
-    reg alu_src_immediate;
-    reg reg_write;
-    reg [3:0] alu_control;
+    reg        alu_src_immediate;
+    reg        reg_write;
+    reg [3:0]  alu_control;
 
-    localparam ALU_ADD = 4'b0000;
-    localparam ALU_SUB = 4'b0001;
-    localparam ALU_AND = 4'b0010;
-    localparam ALU_OR  = 4'b0011;
-    localparam ALU_XOR = 4'b0100;
+    localparam ALU_ADD  = 4'b0000;
+    localparam ALU_SUB  = 4'b0001;
+    localparam ALU_AND  = 4'b0010;
+    localparam ALU_OR   = 4'b0011;
+    localparam ALU_XOR  = 4'b0100;
+    localparam ALU_SLL  = 4'b0101;
+    localparam ALU_SRL  = 4'b0110;
+    localparam ALU_SRA  = 4'b0111;
+    localparam ALU_SLT  = 4'b1000;
+    localparam ALU_SLTU = 4'b1001;
 
     // ============================================================
     // INSTRUCTION DECODER
@@ -134,7 +135,7 @@ module tt_um_avyukth_tinyrv32 (
 
     always @(*) begin
 
-        // Default values
+        // Defaults
         alu_src_immediate = 1'b0;
         reg_write         = 1'b0;
         alu_control       = ALU_ADD;
@@ -143,7 +144,17 @@ module tt_um_avyukth_tinyrv32 (
 
             // ----------------------------------------------------
             // R-TYPE
-            // ADD / SUB / AND / OR / XOR
+            //
+            // ADD
+            // SUB
+            // AND
+            // OR
+            // XOR
+            // SLL
+            // SLT
+            // SLTU
+            // SRL
+            // SRA
             // ----------------------------------------------------
 
             7'b0110011: begin
@@ -152,6 +163,7 @@ module tt_um_avyukth_tinyrv32 (
 
                 case (funct3)
 
+                    // ADD / SUB
                     3'b000: begin
                         if (funct7 == 7'b0100000)
                             alu_control = ALU_SUB;
@@ -159,14 +171,37 @@ module tt_um_avyukth_tinyrv32 (
                             alu_control = ALU_ADD;
                     end
 
-                    3'b111:
-                        alu_control = ALU_AND;
+                    // SLL
+                    3'b001:
+                        alu_control = ALU_SLL;
 
+                    // SLT
+                    3'b010:
+                        alu_control = ALU_SLT;
+
+                    // SLTU
+                    3'b011:
+                        alu_control = ALU_SLTU;
+
+                    // XOR
+                    3'b100:
+                        alu_control = ALU_XOR;
+
+                    // SRL / SRA
+                    3'b101: begin
+                        if (funct7 == 7'b0100000)
+                            alu_control = ALU_SRA;
+                        else
+                            alu_control = ALU_SRL;
+                    end
+
+                    // OR
                     3'b110:
                         alu_control = ALU_OR;
 
-                    3'b100:
-                        alu_control = ALU_XOR;
+                    // AND
+                    3'b111:
+                        alu_control = ALU_AND;
 
                     default:
                         alu_control = ALU_ADD;
@@ -175,18 +210,66 @@ module tt_um_avyukth_tinyrv32 (
             end
 
             // ----------------------------------------------------
-            // I-TYPE
+            // I-TYPE ALU
+            //
             // ADDI
+            // SLTI
+            // SLTIU
+            // XORI
+            // ORI
+            // ANDI
+            // SLLI
+            // SRLI
+            // SRAI
             // ----------------------------------------------------
 
             7'b0010011: begin
 
-                if (funct3 == 3'b000) begin
-                    alu_src_immediate = 1'b1;
-                    reg_write         = 1'b1;
-                    alu_control       = ALU_ADD;
-                end
+                alu_src_immediate = 1'b1;
+                reg_write         = 1'b1;
 
+                case (funct3)
+
+                    // ADDI
+                    3'b000:
+                        alu_control = ALU_ADD;
+
+                    // SLTI
+                    3'b010:
+                        alu_control = ALU_SLT;
+
+                    // SLTIU
+                    3'b011:
+                        alu_control = ALU_SLTU;
+
+                    // XORI
+                    3'b100:
+                        alu_control = ALU_XOR;
+
+                    // ORI
+                    3'b110:
+                        alu_control = ALU_OR;
+
+                    // ANDI
+                    3'b111:
+                        alu_control = ALU_AND;
+
+                    // SLLI
+                    3'b001:
+                        alu_control = ALU_SLL;
+
+                    // SRLI / SRAI
+                    3'b101: begin
+                        if (funct7 == 7'b0100000)
+                            alu_control = ALU_SRA;
+                        else
+                            alu_control = ALU_SRL;
+                    end
+
+                    default:
+                        alu_control = ALU_ADD;
+
+                endcase
             end
 
             default: begin
@@ -199,7 +282,7 @@ module tt_um_avyukth_tinyrv32 (
     end
 
     // ============================================================
-    // ALU INPUT SELECTION
+    // ALU INPUT B
     // ============================================================
 
     wire [31:0] alu_input_b;
@@ -217,20 +300,47 @@ module tt_um_avyukth_tinyrv32 (
 
         case (alu_control)
 
+            // ADD
             ALU_ADD:
                 alu_result = rs1_data + alu_input_b;
 
+            // SUB
             ALU_SUB:
                 alu_result = rs1_data - alu_input_b;
 
+            // AND
             ALU_AND:
                 alu_result = rs1_data & alu_input_b;
 
+            // OR
             ALU_OR:
                 alu_result = rs1_data | alu_input_b;
 
+            // XOR
             ALU_XOR:
                 alu_result = rs1_data ^ alu_input_b;
+
+            // Logical left shift
+            ALU_SLL:
+                alu_result = rs1_data << alu_input_b[4:0];
+
+            // Logical right shift
+            ALU_SRL:
+                alu_result = rs1_data >> alu_input_b[4:0];
+
+            // Arithmetic right shift
+            ALU_SRA:
+                alu_result = $signed(rs1_data) >>> alu_input_b[4:0];
+
+            // Signed comparison
+            ALU_SLT:
+                alu_result = ($signed(rs1_data) < $signed(alu_input_b))
+                              ? 32'd1 : 32'd0;
+
+            // Unsigned comparison
+            ALU_SLTU:
+                alu_result = (rs1_data < alu_input_b)
+                              ? 32'd1 : 32'd0;
 
             default:
                 alu_result = 32'd0;
@@ -255,11 +365,11 @@ module tt_um_avyukth_tinyrv32 (
 
         else if (ena) begin
 
-            // Register writeback
+            // Write ALU result to destination register
             if (reg_write && (rd != 5'd0))
                 registers[rd] <= alu_result;
 
-            // x0 must always remain zero
+            // x0 is always zero
             registers[0] <= 32'd0;
 
             // Next instruction
@@ -270,29 +380,17 @@ module tt_um_avyukth_tinyrv32 (
     end
 
     // ============================================================
-    // DEBUG OUTPUT
-    //
-    // ui_in[2:0] selects which register is displayed:
-    //
-    // 001 -> x1
-    // 010 -> x2
-    // 011 -> x3
-    // 100 -> x4
-    // 101 -> x5
-    // 110 -> x6
-    // 111 -> x7
-    //
-    // ui_in[2:0] = 000 displays x0.
-    //
-    // Only the low 8 bits are exposed.
+    // DEBUG REGISTER OUTPUT
+    // ui_in[2:0] selects register
+    // uo_out shows low 8 bits
     // ============================================================
-    
+
     reg [31:0] debug_register;
-    
+
     always @(*) begin
-    
+
         case (ui_in[2:0])
-    
+
             3'b000: debug_register = registers[0];
             3'b001: debug_register = registers[1];
             3'b010: debug_register = registers[2];
@@ -301,13 +399,15 @@ module tt_um_avyukth_tinyrv32 (
             3'b101: debug_register = registers[5];
             3'b110: debug_register = registers[6];
             3'b111: debug_register = registers[7];
-    
-            default: debug_register = 32'd0;
-    
+
+            default:
+                debug_register = 32'd0;
+
         endcase
     end
-    
+
     assign uo_out = debug_register[7:0];
+
     // Bidirectional pins unused
     assign uio_out = 8'b00000000;
     assign uio_oe  = 8'b00000000;
