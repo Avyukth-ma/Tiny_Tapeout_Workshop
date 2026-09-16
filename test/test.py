@@ -1,6 +1,21 @@
 import cocotb
 from cocotb.clock import Clock
-from cocotb.triggers import RisingEdge
+from cocotb.triggers import RisingEdge, Timer
+
+
+async def clock_cycle(dut):
+    """Wait for a complete clock edge and allow sequential logic to settle."""
+    await RisingEdge(dut.clk)
+    await Timer(1, unit="ns")
+
+
+async def read_register(dut, register_number):
+    """Select a register through ui_in and read its low 8 bits."""
+
+    dut.ui_in.value = register_number
+    await Timer(1, unit="ns")
+
+    return int(dut.uo_out.value)
 
 
 @cocotb.test()
@@ -8,36 +23,35 @@ async def test_tinyrv32(dut):
 
     dut._log.info("Starting TinyRV32 CPU test")
 
-    # ------------------------------------------------------------
-    # Start clock
-    # ------------------------------------------------------------
+    # ============================================================
+    # START CLOCK
+    # ============================================================
 
     clock = Clock(dut.clk, 10, unit="ns")
     cocotb.start_soon(clock.start())
 
-    # ------------------------------------------------------------
-    # Initial inputs
-    # ------------------------------------------------------------
+    # ============================================================
+    # INITIAL INPUTS
+    # ============================================================
 
     dut.ena.value = 1
     dut.ui_in.value = 0
     dut.uio_in.value = 0
 
-    # ------------------------------------------------------------
-    # Reset
-    # ------------------------------------------------------------
+    # ============================================================
+    # RESET
+    # ============================================================
 
     dut.rst_n.value = 0
 
-    # Hold reset for two complete clock cycles
-    await RisingEdge(dut.clk)
-    await RisingEdge(dut.clk)
+    await clock_cycle(dut)
+    await clock_cycle(dut)
 
     # Release reset
     dut.rst_n.value = 1
 
-    # ------------------------------------------------------------
-    # Program execution
+    # ============================================================
+    # PROGRAM
     #
     # 0: NOP
     # 1: ADDI x1, x0, 5
@@ -47,66 +61,119 @@ async def test_tinyrv32(dut):
     # 5: AND  x5, x1, x2
     # 6: OR   x6, x1, x2
     # 7: XOR  x7, x1, x2
-    # ------------------------------------------------------------
+    #
+    # ============================================================
 
+    # ------------------------------------------------------------
     # Execute NOP
-    await RisingEdge(dut.clk)
+    # ------------------------------------------------------------
 
+    await clock_cycle(dut)
+
+    # ------------------------------------------------------------
     # Execute ADDI x1, x0, 5
-    await RisingEdge(dut.clk)
+    # ------------------------------------------------------------
 
-    assert int(dut.user_project.registers[1].value) == 5, \
-        "ADDI x1 failed"
+    await clock_cycle(dut)
 
+    x1 = await read_register(dut, 1)
+
+    assert x1 == 5, (
+        f"ADDI x1 failed: expected 5, got {x1}"
+    )
+
+    # ------------------------------------------------------------
     # Execute ADDI x2, x0, 10
-    await RisingEdge(dut.clk)
+    # ------------------------------------------------------------
 
-    assert int(dut.user_project.registers[2].value) == 10, \
-        "ADDI x2 failed"
+    await clock_cycle(dut)
 
+    x2 = await read_register(dut, 2)
+
+    assert x2 == 10, (
+        f"ADDI x2 failed: expected 10, got {x2}"
+    )
+
+    # ------------------------------------------------------------
     # Execute ADD x3, x1, x2
-    await RisingEdge(dut.clk)
+    # ------------------------------------------------------------
 
-    assert int(dut.user_project.registers[3].value) == 15, \
-        "ADD failed"
+    await clock_cycle(dut)
 
+    x3 = await read_register(dut, 3)
+
+    assert x3 == 15, (
+        f"ADD failed: expected 15, got {x3}"
+    )
+
+    # ------------------------------------------------------------
     # Execute SUB x4, x2, x1
-    await RisingEdge(dut.clk)
+    # ------------------------------------------------------------
 
-    assert int(dut.user_project.registers[4].value) == 5, \
-        "SUB failed"
+    await clock_cycle(dut)
 
+    x4 = await read_register(dut, 4)
+
+    assert x4 == 5, (
+        f"SUB failed: expected 5, got {x4}"
+    )
+
+    # ------------------------------------------------------------
     # Execute AND x5, x1, x2
-    await RisingEdge(dut.clk)
+    # ------------------------------------------------------------
 
-    assert int(dut.user_project.registers[5].value) == (5 & 10), \
-        "AND failed"
+    await clock_cycle(dut)
 
+    x5 = await read_register(dut, 5)
+
+    assert x5 == (5 & 10), (
+        f"AND failed: expected {5 & 10}, got {x5}"
+    )
+
+    # ------------------------------------------------------------
     # Execute OR x6, x1, x2
-    await RisingEdge(dut.clk)
+    # ------------------------------------------------------------
 
-    assert int(dut.user_project.registers[6].value) == (5 | 10), \
-        "OR failed"
+    await clock_cycle(dut)
 
+    x6 = await read_register(dut, 6)
+
+    assert x6 == (5 | 10), (
+        f"OR failed: expected {5 | 10}, got {x6}"
+    )
+
+    # ------------------------------------------------------------
     # Execute XOR x7, x1, x2
-    await RisingEdge(dut.clk)
-
-    assert int(dut.user_project.registers[7].value) == (5 ^ 10), \
-        "XOR failed"
-
-    # ------------------------------------------------------------
-    # Check x0
     # ------------------------------------------------------------
 
-    assert int(dut.user_project.registers[0].value) == 0, \
-        "x0 is not zero"
+    await clock_cycle(dut)
 
-    # ------------------------------------------------------------
-    # Check debug output
-    # x3 = 15
-    # ------------------------------------------------------------
+    x7 = await read_register(dut, 7)
 
-    assert int(dut.uo_out.value) == 15, \
-        "Debug output does not match x3"
+    assert x7 == (5 ^ 10), (
+        f"XOR failed: expected {5 ^ 10}, got {x7}"
+    )
+
+    # ============================================================
+    # CHECK x0
+    # ============================================================
+
+    x0 = await read_register(dut, 0)
+
+    assert x0 == 0, (
+        f"x0 is not zero: got {x0}"
+    )
+
+    # ============================================================
+    # FINAL CHECK
+    # ============================================================
 
     dut._log.info("TinyRV32 basic instruction test passed!")
+    dut._log.info("x0 = %d", x0)
+    dut._log.info("x1 = %d", x1)
+    dut._log.info("x2 = %d", x2)
+    dut._log.info("x3 = %d", x3)
+    dut._log.info("x4 = %d", x4)
+    dut._log.info("x5 = %d", x5)
+    dut._log.info("x6 = %d", x6)
+    dut._log.info("x7 = %d", x7)
