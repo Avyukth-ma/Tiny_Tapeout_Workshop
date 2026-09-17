@@ -26,7 +26,7 @@ pinout:
   ui[0]: "Register Select Bit 0"
   ui[1]: "Register Select Bit 1"
   ui[2]: "Register Select Bit 2"
-  ui[3]: "Unused"
+  ui[3]: "Register Select Bit 3"  
   ui[4]: "Unused"
   ui[5]: "Unused"
   ui[6]: "Unused"
