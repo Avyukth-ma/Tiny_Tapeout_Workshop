@@ -1,10 +1,10 @@
 # Tiny Tapeout project information
 
 project:
-  title: "TinyRV32"
+  title: "Simple CPU (TinyRV32)"
   author: "Avyukth-ma"
   discord: ""
-  description: "A compact single-cycle RV32I processor."
+  description: "A fixed-program 32-bit RISC-V ALU subset demo."
   language: "Verilog"
   clock_hz: 0
 
@@ -26,7 +26,7 @@ pinout:
   ui[0]: "Register Select Bit 0"
   ui[1]: "Register Select Bit 1"
   ui[2]: "Register Select Bit 2"
-  ui[3]: "Register Select Bit 3"  
+  ui[3]: "Register Select Bit 3"
   ui[4]: "Unused"
   ui[5]: "Unused"
   ui[6]: "Unused"

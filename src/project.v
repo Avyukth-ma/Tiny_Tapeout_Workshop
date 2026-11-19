@@ -10,646 +10,162 @@ module tt_um_avyukth_tinyrv32 (
     input  wire       clk,
     input  wire       rst_n
 );
-
-    // ============================================================
-    // PROGRAM COUNTER
-    // ============================================================
-
-    reg [31:0] pc;
-
-
-    // ============================================================
-    // REGISTER FILE
-    //
-    // 32 registers
-    // 32 bits per register
-    //
-    // RISC-V register x0 is hardwired to zero.
-    // ============================================================
-
-    reg [31:0] registers [0:31];
-
-
-    // ============================================================
-    // INSTRUCTION MEMORY
-    //
-    // 32 words x 32 bits
-    //
-    // PC[6:2] selects one of the 32 instruction words.
-    // ============================================================
-
-    reg [31:0] instruction_memory [0:31];
-
-    integer i;
-
-
-    // ============================================================
-    // TEST PROGRAM
-    //
-    // Instruction format:
-    //
-    // 0:  NOP
-    // 1:  ADDI  x1,  x0, 5
-    // 2:  ADDI  x2,  x0, 10
-    // 3:  ADD   x3,  x1, x2
-    // 4:  SUB   x4,  x2, x1
-    // 5:  AND   x5,  x1, x2
-    // 6:  OR    x6,  x1, x2
-    // 7:  XOR   x7,  x1, x2
-    //
-    // 8:  ADDI  x8,  x0, 20
-    // 9:  SLTI  x9,  x8, 30
-    // 10: SLTIU x10, x8, 10
-    // 11: XORI  x11, x8, 15
-    // 12: ORI   x12, x8, 3
-    // 13: ANDI  x13, x8, 7
-    // 14: SLLI  x14, x8, 2
-    // 15: SRLI  x15, x8, 2
-    //
-    // 16-31: NOP
-    //
-    // ============================================================
-
-    initial begin
-
-        // --------------------------------------------------------
-        // Basic instructions
-        // --------------------------------------------------------
-
-        // 0: NOP
-        instruction_memory[0] = 32'h00000013;
-
-        // 1: ADDI x1, x0, 5
-        instruction_memory[1] = 32'h00500093;
-
-        // 2: ADDI x2, x0, 10
-        instruction_memory[2] = 32'h00A00113;
-
-        // 3: ADD x3, x1, x2
-        instruction_memory[3] = 32'h002081B3;
-
-        // 4: SUB x4, x2, x1
-        instruction_memory[4] = 32'h40110233;
-
-        // 5: AND x5, x1, x2
-        instruction_memory[5] = 32'h0020F2B3;
-
-        // 6: OR x6, x1, x2
-        instruction_memory[6] = 32'h0020E333;
-
-        // 7: XOR x7, x1, x2
-        instruction_memory[7] = 32'h0020C3B3;
-
-
-        // --------------------------------------------------------
-        // Extended immediate instructions
-        // --------------------------------------------------------
-
-        // 8: ADDI x8, x0, 20
-        instruction_memory[8] = 32'h01400413;
-
-        // 9: SLTI x9, x8, 30
-        instruction_memory[9] = 32'h01E42493;
-
-        // 10: SLTIU x10, x8, 10
-        instruction_memory[10] = 32'h00A43513;
-
-        // 11: XORI x11, x8, 15
-        instruction_memory[11] = 32'h00F44593;
-
-        // 12: ORI x12, x8, 3
-        instruction_memory[12] = 32'h00346613;
-
-        // 13: ANDI x13, x8, 7
-        instruction_memory[13] = 32'h00747693;
-
-        // 14: SLLI x14, x8, 2
-        instruction_memory[14] = 32'h00241713;
-
-        // 15: SRLI x15, x8, 2
-        instruction_memory[15] = 32'h00245793;
-
-
-        // --------------------------------------------------------
-        // Remaining memory locations contain NOP
-        // --------------------------------------------------------
-
-        for (i = 16; i < 32; i = i + 1)
-            instruction_memory[i] = 32'h00000013;
-
-    end
-
-
-    // ============================================================
-    // INSTRUCTION FETCH
-    // ============================================================
-
-    wire [31:0] instruction;
-
-    assign instruction = instruction_memory[pc[6:2]];
-
-
-    // ============================================================
-    // INSTRUCTION FIELDS
-    // ============================================================
-
-    wire [6:0] opcode;
-    wire [4:0] rd;
-    wire [2:0] funct3;
-    wire [4:0] rs1;
-    wire [4:0] rs2;
-    wire [6:0] funct7;
-
-    assign opcode = instruction[6:0];
-    assign rd     = instruction[11:7];
-    assign funct3 = instruction[14:12];
-    assign rs1    = instruction[19:15];
-    assign rs2    = instruction[24:20];
-    assign funct7 = instruction[31:25];
-
-
-    // ============================================================
-    // REGISTER FILE READ
-    // ============================================================
-
-    wire [31:0] rs1_data;
-    wire [31:0] rs2_data;
-
-    assign rs1_data =
-        (rs1 == 5'd0) ? 32'd0 : registers[rs1];
-
-    assign rs2_data =
-        (rs2 == 5'd0) ? 32'd0 : registers[rs2];
-
-
-    // ============================================================
-    // I-TYPE IMMEDIATE
-    //
-    // Sign-extended 12-bit immediate.
-    // ============================================================
-
-    wire [31:0] immediate;
-
-    assign immediate = {
-        {20{instruction[31]}},
-        instruction[31:20]
-    };
-
-
-    // ============================================================
-    // ALU CONTROL
-    // ============================================================
-
-    reg        alu_src_immediate;
-    reg        reg_write;
-    reg [3:0]  alu_control;
-
-    localparam ALU_ADD  = 4'b0000;
-    localparam ALU_SUB  = 4'b0001;
-    localparam ALU_AND  = 4'b0010;
-    localparam ALU_OR   = 4'b0011;
-    localparam ALU_XOR  = 4'b0100;
-    localparam ALU_SLL  = 4'b0101;
-    localparam ALU_SRL  = 4'b0110;
-    localparam ALU_SRA  = 4'b0111;
-    localparam ALU_SLT  = 4'b1000;
-    localparam ALU_SLTU = 4'b1001;
-
-
-    // ============================================================
-    // INSTRUCTION DECODER
-    // ============================================================
-
-    always @(*) begin
-
-        // Default control values
-        alu_src_immediate = 1'b0;
-        reg_write         = 1'b0;
-        alu_control       = ALU_ADD;
-
-
-        case (opcode)
-
-            // ====================================================
-            // R-TYPE
-            // opcode = 0110011
-            // ====================================================
-
-            7'b0110011: begin
-
-                reg_write = 1'b1;
-
-                case (funct3)
-
-                    // --------------------------------------------
-                    // ADD / SUB
-                    // --------------------------------------------
-
-                    3'b000: begin
-
-                        if (funct7 == 7'b0100000)
-                            alu_control = ALU_SUB;
-                        else
-                            alu_control = ALU_ADD;
-
-                    end
-
-
-                    // --------------------------------------------
-                    // SLL
-                    // --------------------------------------------
-
-                    3'b001:
-                        alu_control = ALU_SLL;
-
-
-                    // --------------------------------------------
-                    // SLT
-                    // --------------------------------------------
-
-                    3'b010:
-                        alu_control = ALU_SLT;
-
-
-                    // --------------------------------------------
-                    // SLTU
-                    // --------------------------------------------
-
-                    3'b011:
-                        alu_control = ALU_SLTU;
-
-
-                    // --------------------------------------------
-                    // XOR
-                    // --------------------------------------------
-
-                    3'b100:
-                        alu_control = ALU_XOR;
-
-
-                    // --------------------------------------------
-                    // SRL / SRA
-                    // --------------------------------------------
-
-                    3'b101: begin
-
-                        if (funct7 == 7'b0100000)
-                            alu_control = ALU_SRA;
-                        else
-                            alu_control = ALU_SRL;
-
-                    end
-
-
-                    // --------------------------------------------
-                    // OR
-                    // --------------------------------------------
-
-                    3'b110:
-                        alu_control = ALU_OR;
-
-
-                    // --------------------------------------------
-                    // AND
-                    // --------------------------------------------
-
-                    3'b111:
-                        alu_control = ALU_AND;
-
-
-                    default:
-                        alu_control = ALU_ADD;
-
-                endcase
-
-            end
-
-
-            // ====================================================
-            // I-TYPE ALU
-            // opcode = 0010011
-            // ====================================================
-
-            7'b0010011: begin
-
-                alu_src_immediate = 1'b1;
-                reg_write         = 1'b1;
-
-                case (funct3)
-
-                    // --------------------------------------------
-                    // ADDI
-                    // --------------------------------------------
-
-                    3'b000:
-                        alu_control = ALU_ADD;
-
-
-                    // --------------------------------------------
-                    // SLLI
-                    // --------------------------------------------
-
-                    3'b001:
-                        alu_control = ALU_SLL;
-
-
-                    // --------------------------------------------
-                    // SLTI
-                    // --------------------------------------------
-
-                    3'b010:
-                        alu_control = ALU_SLT;
-
-
-                    // --------------------------------------------
-                    // SLTIU
-                    // --------------------------------------------
-
-                    3'b011:
-                        alu_control = ALU_SLTU;
-
-
-                    // --------------------------------------------
-                    // XORI
-                    // --------------------------------------------
-
-                    3'b100:
-                        alu_control = ALU_XOR;
-
-
-                    // --------------------------------------------
-                    // SRLI / SRAI
-                    // --------------------------------------------
-
-                    3'b101: begin
-
-                        if (funct7 == 7'b0100000)
-                            alu_control = ALU_SRA;
-                        else
-                            alu_control = ALU_SRL;
-
-                    end
-
-
-                    // --------------------------------------------
-                    // ORI
-                    // --------------------------------------------
-
-                    3'b110:
-                        alu_control = ALU_OR;
-
-
-                    // --------------------------------------------
-                    // ANDI
-                    // --------------------------------------------
-
-                    3'b111:
-                        alu_control = ALU_AND;
-
-
-                    default:
-                        alu_control = ALU_ADD;
-
-                endcase
-
-            end
-
-
-            // ====================================================
-            // Unsupported instruction
-            // ====================================================
-
-            default: begin
-
-                alu_src_immediate = 1'b0;
-                reg_write         = 1'b0;
-                alu_control       = ALU_ADD;
-
-            end
-
+    // Word address within the fixed 32-word demo ROM.
+    reg [4:0] pc;
+    reg [31:0] instruction;
+
+    always @* begin
+        case (pc)
+            5'd0 : instruction = 32'h00000013; // NOP
+            5'd1 : instruction = 32'h00500093; // ADDI x1, x0, 5
+            5'd2 : instruction = 32'h00a00113; // ADDI x2, x0, 10
+            5'd3 : instruction = 32'h002081b3; // ADD x3, x1, x2
+            5'd4 : instruction = 32'h40110233; // SUB x4, x2, x1
+            5'd5 : instruction = 32'h0020f2b3; // AND x5, x1, x2
+            5'd6 : instruction = 32'h0020e333; // OR x6, x1, x2
+            5'd7 : instruction = 32'h0020c3b3; // XOR x7, x1, x2
+            5'd8 : instruction = 32'h01400413; // ADDI x8, x0, 20
+            5'd9 : instruction = 32'h01e42493; // SLTI x9, x8, 30
+            5'd10: instruction = 32'h00a43513; // SLTIU x10, x8, 10
+            5'd11: instruction = 32'h00f44593; // XORI x11, x8, 15
+            5'd12: instruction = 32'h00346613; // ORI x12, x8, 3
+            5'd13: instruction = 32'h00747693; // ANDI x13, x8, 7
+            5'd14: instruction = 32'h00241713; // SLLI x14, x8, 2
+            5'd15: instruction = 32'h00245793; // SRLI x15, x8, 2
+            5'd16: instruction = 32'hff800413; // ADDI x8, x0, -8
+            5'd17: instruction = 32'h001421b3; // SLT x3, x8, x1
+            5'd18: instruction = 32'h00143233; // SLTU x4, x8, x1
+            5'd19: instruction = 32'h001092b3; // SLL x5, x1, x1
+            5'd20: instruction = 32'h01f00113; // ADDI x2, x0, 31
+            5'd21: instruction = 32'h00245333; // SRL x6, x8, x2
+            5'd22: instruction = 32'h402453b3; // SRA x7, x8, x2
+            5'd23: instruction = 32'h41f45493; // SRAI x9, x8, 31
+            5'd24: instruction = 32'hfff42513; // SLTI x10, x8, -1
+            5'd25: instruction = 32'hfff0b593; // SLTIU x11, x1, -1
+            5'd26: instruction = 32'h00700013; // ADDI x0, x0, 7
+            5'd27: instruction = 32'h02200113; // ADDI x2, x0, 34
+            5'd28: instruction = 32'h00209633; // SLL x12, x1, x2
+            5'd29: instruction = 32'h00a43693; // SLTIU x13, x8, 10
+            5'd30: instruction = 32'h01f45693; // SRLI x13, x8, 31
+            5'd31: instruction = 32'h022080b3; // Unsupported OP encoding, no write
+            default: instruction = 32'h00000013;
         endcase
-
     end
 
+    wire [6:0] opcode = instruction[6:0];
+    wire [4:0] rd     = instruction[11:7];
+    wire [2:0] funct3 = instruction[14:12];
+    wire [4:0] rs1    = instruction[19:15];
+    wire [4:0] rs2    = instruction[24:20];
+    wire [6:0] funct7 = instruction[31:25];
+    wire [31:0] imm   = {{20{instruction[31]}}, instruction[31:20]};
+    wire is_imm = opcode == 7'b0010011;
+    wire is_reg = opcode == 7'b0110011;
 
-    // ============================================================
-    // ALU SECOND OPERAND
-    // ============================================================
+    // Only x0/x1/x2/x8 are sources in the fixed ROM. Keep full words
+    // for x1/x2/x8 and keep only the visible byte of the write-only
+    // result slots. The ROM only loads source slots with ADDI from x0.
+    // Keep that path separate so the ALU does not feed its own source muxes.
+    reg [31:0] x1, x2, x8;
+    wire rs1_valid = rs1 == 0 || rs1 == 1 || rs1 == 2 || rs1 == 8;
+    wire rs2_valid = rs2 == 0 || rs2 == 1 || rs2 == 2 || rs2 == 8;
+    wire [31:0] a = (rs1 == 1) ? x1 : (rs1 == 2) ? x2 : (rs1 == 8) ? x8 : 32'd0;
+    wire [31:0] b_reg = (rs2 == 1) ? x1 : (rs2 == 2) ? x2 : (rs2 == 8) ? x8 : 32'd0;
+    wire [31:0] b = is_imm ? imm : b_reg;
 
-    wire [31:0] alu_input_b;
+    wire shift_op = funct3 == 3'b001 || funct3 == 3'b101;
+    wire alternate = funct7 == 7'b0100000;
+    wire base_funct7 = funct7 == 7'b0000000;
+    wire valid_funct = is_imm
+        ? (!shift_op || base_funct7 || (funct3 == 3'b101 && alternate))
+        : (base_funct7 || ((funct3 == 3'b000 || funct3 == 3'b101) && alternate));
+    wire writeback = ena && (is_imm || is_reg) && valid_funct
+                   && rs1_valid && (is_imm || rs2_valid) && !rd[4] && rd != 0;
 
-    assign alu_input_b =
-        alu_src_immediate ? immediate : rs2_data;
+    // Share add/subtract and the left/logical/arithmetic shift hardware.
+    wire subtract = is_reg && alternate && funct3 == 3'b000;
+    wire [31:0] sum = a + (b ^ {32{subtract}}) + {31'b0, subtract};
 
+    function [31:0] reverse_bits;
+        input [31:0] word;
+        integer bit_index;
+        begin
+            for (bit_index = 0; bit_index < 32; bit_index = bit_index + 1)
+                reverse_bits[bit_index] = word[31-bit_index];
+        end
+    endfunction
 
-    // ============================================================
-    // ALU
-    // ============================================================
+    wire shift_left = funct3 == 3'b001;
+    wire sign_fill = !shift_left && alternate && a[31];
+    wire [31:0] shift_in = shift_left ? reverse_bits(a) : a;
+    wire signed [32:0] shift_extended = {sign_fill, shift_in};
+    wire signed [32:0] shift_out = shift_extended >>> b[4:0];
+    wire [31:0] shift_result = shift_left ? reverse_bits(shift_out[31:0]) : shift_out[31:0];
+    wire less_unsigned = a < b;
+    wire less_signed = (a[31] ^ b[31]) ? a[31] : less_unsigned;
 
-    reg [31:0] alu_result;
-
-    always @(*) begin
-
-        case (alu_control)
-
-            // ADD
-            ALU_ADD:
-                alu_result = rs1_data + alu_input_b;
-
-
-            // SUB
-            ALU_SUB:
-                alu_result = rs1_data - alu_input_b;
-
-
-            // AND
-            ALU_AND:
-                alu_result = rs1_data & alu_input_b;
-
-
-            // OR
-            ALU_OR:
-                alu_result = rs1_data | alu_input_b;
-
-
-            // XOR
-            ALU_XOR:
-                alu_result = rs1_data ^ alu_input_b;
-
-
-            // Shift left logical
-            ALU_SLL:
-                alu_result =
-                    rs1_data << alu_input_b[4:0];
-
-
-            // Shift right logical
-            ALU_SRL:
-                alu_result =
-                    rs1_data >> alu_input_b[4:0];
-
-
-            // Shift right arithmetic
-            ALU_SRA:
-                alu_result =
-                    $signed(rs1_data) >>> alu_input_b[4:0];
-
-
-            // Set less than - signed
-            ALU_SLT:
-                alu_result =
-                    ($signed(rs1_data) < $signed(alu_input_b))
-                    ? 32'd1
-                    : 32'd0;
-
-
-            // Set less than - unsigned
-            ALU_SLTU:
-                alu_result =
-                    (rs1_data < alu_input_b)
-                    ? 32'd1
-                    : 32'd0;
-
-
-            default:
-                alu_result = 32'd0;
-
+    reg [31:0] result;
+    always @* begin
+        case (funct3)
+            3'b000: result = sum;
+            3'b001, 3'b101: result = shift_result;
+            3'b010: result = {31'b0, less_signed};
+            3'b011: result = {31'b0, less_unsigned};
+            3'b100: result = a ^ b;
+            3'b110: result = a | b;
+            3'b111: result = a & b;
+            default: result = 32'd0;
         endcase
-
     end
-
-
-    // ============================================================
-    // SEQUENTIAL LOGIC
-    //
-    // Register writeback
-    // Program counter update
-    // Reset
-    // ============================================================
 
     always @(posedge clk) begin
-
         if (!rst_n) begin
-
-            pc <= 32'd0;
-
-            for (i = 0; i < 32; i = i + 1)
-                registers[i] <= 32'd0;
-
+            pc <= 5'd0;
+            x1 <= 32'd0;
+            x2 <= 32'd0;
+            x8 <= 32'd0;
+        end else begin
+            if (ena)
+                pc <= pc + 5'd1;
+            if (writeback && is_imm && funct3 == 3'b000 && rs1 == 0) begin
+                case (rd)
+                    5'd1: x1 <= imm;
+                    5'd2: x2 <= imm;
+                    5'd8: x8 <= imm;
+                    default: ;
+                endcase
+            end
         end
-
-        else if (ena) begin
-
-            // Write ALU result to destination register
-            if (reg_write && (rd != 5'd0))
-                registers[rd] <= alu_result;
-
-            // x0 is always zero
-            registers[0] <= 32'd0;
-
-            // Advance to next instruction
-            pc <= pc + 32'd4;
-
-        end
-
     end
 
+    wire [7:0] debug_bytes [0:15];
+    assign debug_bytes[0] = 8'd0;
+    assign debug_bytes[1] = x1[7:0];
+    assign debug_bytes[2] = x2[7:0];
+    assign debug_bytes[8] = x8[7:0];
 
-    // ============================================================
-    // DEBUG REGISTER SELECTOR
-    //
-    // ui_in[3:0] selects one of x0-x15.
-    //
-    // The lower 8 bits of the selected register are displayed
-    // on uo_out.
-    //
-    // Example:
-    //
-    // ui_in = 4'b0011
-    //       -> select x3
-    //
-    // If x3 = 15:
-    //
-    // uo_out = 8'b00001111
-    //
-    // ============================================================
+    genvar g;
+    generate
+        for (g = 3; g < 16; g = g + 1) begin : gen_debug
+            if (g != 8) begin : gen_result
+                localparam [4:0] SLOT = g;
+                reg [7:0] value;
+                always @(posedge clk) begin
+                    if (!rst_n)
+                        value <= 8'd0;
+                    else if (writeback && rd == SLOT)
+                        value <= result[7:0];
+                end
+                assign debug_bytes[g] = value;
+            end
+        end
+    endgenerate
 
-    reg [31:0] debug_register;
+    assign uo_out = debug_bytes[ui_in[3:0]];
+    assign uio_out = 8'd0;
+    assign uio_oe = 8'd0;
 
-    always @(*) begin
-
-        case (ui_in[3:0])
-
-            4'h0:
-                debug_register = registers[0];
-
-            4'h1:
-                debug_register = registers[1];
-
-            4'h2:
-                debug_register = registers[2];
-
-            4'h3:
-                debug_register = registers[3];
-
-            4'h4:
-                debug_register = registers[4];
-
-            4'h5:
-                debug_register = registers[5];
-
-            4'h6:
-                debug_register = registers[6];
-
-            4'h7:
-                debug_register = registers[7];
-
-            4'h8:
-                debug_register = registers[8];
-
-            4'h9:
-                debug_register = registers[9];
-
-            4'hA:
-                debug_register = registers[10];
-
-            4'hB:
-                debug_register = registers[11];
-
-            4'hC:
-                debug_register = registers[12];
-
-            4'hD:
-                debug_register = registers[13];
-
-            4'hE:
-                debug_register = registers[14];
-
-            4'hF:
-                debug_register = registers[15];
-
-            default:
-                debug_register = 32'd0;
-
-        endcase
-
-    end
-
-
-    // ============================================================
-    // OUTPUT
-    // ============================================================
-
-    assign uo_out = debug_register[7:0];
-
-
-    // ============================================================
-    // UNUSED BIDIRECTIONAL PINS
-    // ============================================================
-
-    assign uio_out = 8'b00000000;
-    assign uio_oe  = 8'b00000000;
-
+    wire _unused = &{ui_in[7:4], uio_in, shift_out[32], 1'b0};
 endmodule
 
 `default_nettype wire

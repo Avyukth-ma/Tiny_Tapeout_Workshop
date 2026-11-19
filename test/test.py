@@ -3,161 +3,99 @@ from cocotb.clock import Clock
 from cocotb.triggers import RisingEdge, Timer
 
 
-async def clock_cycle(dut):
-    """Wait for a complete clock edge and allow sequential logic to settle."""
+async def tick(dut):
     await RisingEdge(dut.clk)
-    await Timer(1, unit="ns")
+    await Timer(20, unit="ns")
 
 
-async def read_register(dut, register_number):
-    """Select a register through ui_in and read its low 8 bits."""
-    dut.ui_in.value = register_number
-    await Timer(1, unit="ns")
-    return int(dut.uo_out.value)
+async def check_register(dut, register, expected, context):
+    dut.ui_in.value = register
+    await Timer(10, unit="ns")
+    actual = int(dut.uo_out.value)
+    assert actual == expected, (
+        f"{context}, x{register}: expected 0x{expected:02x}, got 0x{actual:02x}"
+    )
 
 
 @cocotb.test()
-async def test_tinyrv32(dut):
-
-    dut._log.info("Starting TinyRV32 extended ALU test")
-
-    # ============================================================
-    # START CLOCK
-    # ============================================================
-
-    clock = Clock(dut.clk, 10, unit="ns")
-    cocotb.start_soon(clock.start())
-
-    # ============================================================
-    # INITIAL INPUTS
-    # ============================================================
-
-    dut.ena.value = 1
+async def test_simple_cpu(dut):
+    dut.rst_n.value = 0
+    dut.ena.value = 0
     dut.ui_in.value = 0
     dut.uio_in.value = 0
+    cocotb.start_soon(Clock(dut.clk, 100, unit="ns").start())
 
-    # ============================================================
-    # RESET
-    # ============================================================
-
-    dut.rst_n.value = 0
-
-    await clock_cycle(dut)
-    await clock_cycle(dut)
+    await tick(dut)
+    await tick(dut)
+    await check_register(dut, 1, 0, "initial reset")
+    assert int(dut.uio_oe.value) == 0
+    assert int(dut.uio_out.value) == 0
 
     dut.rst_n.value = 1
+    dut.ena.value = 1
+    await tick(dut)  # ROM word 0: NOP
 
-    # ============================================================
-    # BASIC ALU INSTRUCTIONS
-    # ============================================================
+    # One result per ROM word, via the public pins in RTL and gate-level simulation.
+    expected = (
+        (1, 5, "ADDI x1, x0, 5"),
+        (2, 10, "ADDI x2, x0, 10"),
+        (3, 15, "ADD x3, x1, x2"),
+        (4, 5, "SUB x4, x2, x1"),
+        (5, 0, "AND x5, x1, x2"),
+        (6, 15, "OR x6, x1, x2"),
+        (7, 15, "XOR x7, x1, x2"),
+        (8, 20, "ADDI x8, x0, 20"),
+        (9, 1, "SLTI x9, x8, 30"),
+        (10, 0, "SLTIU x10, x8, 10"),
+        (11, 27, "XORI x11, x8, 15"),
+        (12, 23, "ORI x12, x8, 3"),
+        (13, 4, "ANDI x13, x8, 7"),
+        (14, 80, "SLLI x14, x8, 2"),
+        (15, 5, "SRLI x15, x8, 2"),
+        (8, 248, "ADDI x8, x0, -8"),
+        (3, 1, "SLT x3, x8, x1"),
+        (4, 0, "SLTU x4, x8, x1"),
+        (5, 160, "SLL x5, x1, x1"),
+        (2, 31, "ADDI x2, x0, 31"),
+        (6, 1, "SRL x6, x8, x2"),
+        (7, 255, "SRA x7, x8, x2"),
+        (9, 255, "SRAI x9, x8, 31"),
+        (10, 1, "SLTI x10, x8, -1"),
+        (11, 1, "SLTIU x11, x1, -1"),
+        (0, 0, "ADDI x0, x0, 7"),
+        (2, 34, "ADDI x2, x0, 34"),
+        (12, 20, "SLL x12, x1, x2"),
+        (13, 0, "SLTIU x13, x8, 10"),
+        (13, 1, "SRLI x13, x8, 31"),
+        (1, 5, "Unsupported OP encoding, no write"),
+    )
+    for word, (reg, value, instruction) in enumerate(expected, start=1):
+        await tick(dut)
+        await check_register(dut, reg, value, f"ROM word {word}: {instruction}")
+        if word == 1:
+            dut.ena.value = 0
+            for _ in range(3):
+                await tick(dut)
+                await check_register(dut, 1, 5, "disabled: register holds")
+                await check_register(dut, 2, 0, "disabled: next instruction not executed")
+            dut.ena.value = 1
 
-    # 0: NOP
-    await clock_cycle(dut)
+    # Counter wraps after 32 instructions and starts the same program again.
+    await tick(dut)
+    await check_register(dut, 2, 34, "wrapped NOP")
+    await tick(dut)
+    await tick(dut)
+    await check_register(dut, 2, 10, "wrapped ADDI")
 
-    # 1: ADDI x1, x0, 5
-    await clock_cycle(dut)
-    x1 = await read_register(dut, 1)
-    assert x1 == 5, f"ADDI x1 failed: expected 5, got {x1}"
-
-    # 2: ADDI x2, x0, 10
-    await clock_cycle(dut)
-    x2 = await read_register(dut, 2)
-    assert x2 == 10, f"ADDI x2 failed: expected 10, got {x2}"
-
-    # 3: ADD x3, x1, x2
-    await clock_cycle(dut)
-    x3 = await read_register(dut, 3)
-    assert x3 == 15, f"ADD failed: expected 15, got {x3}"
-
-    # 4: SUB x4, x2, x1
-    await clock_cycle(dut)
-    x4 = await read_register(dut, 4)
-    assert x4 == 5, f"SUB failed: expected 5, got {x4}"
-
-    # 5: AND x5, x1, x2
-    await clock_cycle(dut)
-    x5 = await read_register(dut, 5)
-    assert x5 == (5 & 10), f"AND failed: expected {5 & 10}, got {x5}"
-
-    # 6: OR x6, x1, x2
-    await clock_cycle(dut)
-    x6 = await read_register(dut, 6)
-    assert x6 == (5 | 10), f"OR failed: expected {5 | 10}, got {x6}"
-
-    # 7: XOR x7, x1, x2
-    await clock_cycle(dut)
-    x7 = await read_register(dut, 7)
-    assert x7 == (5 ^ 10), f"XOR failed: expected {5 ^ 10}, got {x7}"
-
-    # ============================================================
-    # EXTENDED IMMEDIATE INSTRUCTIONS
-    # ============================================================
-
-    # 8: ADDI x8, x0, 20
-    await clock_cycle(dut)
-    x8 = await read_register(dut, 8)
-    assert x8 == 20, f"ADDI x8 failed: expected 20, got {x8}"
-
-    # 9: SLTI x9, x8, 30
-    await clock_cycle(dut)
-    x9 = await read_register(dut, 9)
-    assert x9 == 1, f"SLTI x9 failed: expected 1, got {x9}"
-
-    # 10: SLTIU x10, x8, 10
-    await clock_cycle(dut)
-    x10 = await read_register(dut, 10)
-    assert x10 == 0, f"SLTIU x10 failed: expected 0, got {x10}"
-
-    # 11: XORI x11, x8, 15
-    await clock_cycle(dut)
-    x11 = await read_register(dut, 11)
-    assert x11 == 27, f"XORI x11 failed: expected 27, got {x11}"
-
-    # 12: ORI x12, x8, 3
-    await clock_cycle(dut)
-    x12 = await read_register(dut, 12)
-    assert x12 == 23, f"ORI x12 failed: expected 23, got {x12}"
-
-    # 13: ANDI x13, x8, 7
-    await clock_cycle(dut)
-    x13 = await read_register(dut, 13)
-    assert x13 == 4, f"ANDI x13 failed: expected 4, got {x13}"
-
-    # 14: SLLI x14, x8, 2
-    await clock_cycle(dut)
-    x14 = await read_register(dut, 14)
-    assert x14 == 80, f"SLLI x14 failed: expected 80, got {x14}"
-
-    # 15: SRLI x15, x8, 2
-    await clock_cycle(dut)
-    x15 = await read_register(dut, 15)
-    assert x15 == 5, f"SRLI x15 failed: expected 5, got {x15}"
-
-    # ============================================================
-    # CHECK x0
-    # ============================================================
-
-    x0 = await read_register(dut, 0)
-    assert x0 == 0, f"x0 is not zero: got {x0}"
-
-    # ============================================================
-    # FINAL LOG
-    # ============================================================
-
-    dut._log.info("TinyRV32 extended ALU test passed!")
-    dut._log.info("x0  = %d", x0)
-    dut._log.info("x1  = %d", x1)
-    dut._log.info("x2  = %d", x2)
-    dut._log.info("x3  = %d", x3)
-    dut._log.info("x4  = %d", x4)
-    dut._log.info("x5  = %d", x5)
-    dut._log.info("x6  = %d", x6)
-    dut._log.info("x7  = %d", x7)
-    dut._log.info("x8  = %d", x8)
-    dut._log.info("x9  = %d", x9)
-    dut._log.info("x10 = %d", x10)
-    dut._log.info("x11 = %d", x11)
-    dut._log.info("x12 = %d", x12)
-    dut._log.info("x13 = %d", x13)
-    dut._log.info("x14 = %d", x14)
-    dut._log.info("x15 = %d", x15)
+    # Reset works with enable low and clears every visible slot.
+    dut.rst_n.value = 0
+    dut.ena.value = 0
+    await tick(dut)
+    for reg in range(16):
+        await check_register(dut, reg, 0, "reset while disabled")
+    dut.rst_n.value = 1
+    dut.ena.value = 1
+    await tick(dut)
+    await check_register(dut, 1, 0, "reset returned to NOP")
+    await tick(dut)
+    await check_register(dut, 1, 5, "restart after reset")
